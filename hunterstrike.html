@@ -1,0 +1,248 @@
+
+/* File: hunterstrike.html */
+<!DOCTYPE html><html><head><style>body, html { margin: 0; padding: 0; overflow: hidden; background: #000; font-family: 'Orbitron', sans-serif; color: #fff; touch-action: none; }
+canvas { display: block; filter: contrast(1.1) brightness(1.1); }
+
+#ui-layer { position: absolute; inset: 0; pointer-events: none; padding: 40px; z-index: 60; }
+.hud-container { display: flex; justify-content: space-between; }
+.stat-val { font-size: 24px; color: #00d2ff; text-shadow: 0 0 10px rgba(0,210,255,0.5); font-weight: 900; }
+.label { font-size: 10px; color: #777; letter-spacing: 2px; font-weight: bold; }
+
+.ult-bar { width: 160px; height: 8px; background: #111; border: 1px solid #333; margin-top: 5px; border-radius: 4px; overflow: hidden; }
+#ult-fill { width: 0%; height: 100%; background: #00fbff; box-shadow: 0 0 15px #00fbff; transition: 0.3s; }
+
+#boss-ui { position: absolute; top: 12%; left: 50%; transform: translateX(-50%); width: 70%; display: none; text-align: center; }
+.boss-hp-bar { width: 100%; height: 12px; background: #200; border: 1px solid #f00; margin-top: 5px; border-radius: 6px; overflow: hidden; }
+#boss-hp-fill { width: 100%; height: 100%; background: linear-gradient(90deg, #800, #f00); box-shadow: 0 0 20px #f00; }
+
+#overlay { position: absolute; inset: 0; background: radial-gradient(circle, #111 0%, #000 100%); display: flex; justify-content: center; align-items: center; z-index: 100; text-align: center; }
+.btn-launch { background: transparent; color: #fff; border: 2px solid #fff; padding: 18px 50px; font-family: 'Orbitron'; cursor: pointer; font-weight: 900; letter-spacing: 2px; transition: 0.3s; }
+.btn-launch:hover { background: #fff; color: #000; box-shadow: 0 0 40px #fff; transform: scale(1.05); }</style></head><body><!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gogor Strike V4: Final Edition</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <canvas id="gameCanvas"></canvas>
+    
+    <div id="ui-layer">
+        <div class="hud-container">
+            <div class="left">
+                <div class="label">WEAPON SYSTEM</div>
+                <div class="stat-val" id="wpn-txt">LV. 1</div>
+                <div class="ult-bar"><div id="ult-fill"></div></div>
+            </div>
+            <div class="right" style="text-align: right;">
+                <div class="label">HIGH SCORE</div>
+                <div id="high-score-txt" class="stat-val" style="color: #ffcc00;">0</div>
+                <div class="label">SCORE: <span id="score-txt" style="color:#fff">0</span></div>
+            </div>
+        </div>
+        <div id="boss-ui">
+            <div class="label" style="color: #f00; letter-spacing: 5px;">ELITE BOSS DETECTED</div>
+            <div class="boss-hp-bar"><div id="boss-hp-fill"></div></div>
+        </div>
+    </div>
+
+    <div id="overlay">
+        <div>
+            <h1 style="font-size: 3.5em; margin: 0; text-shadow: 0 0 20px #00fbff;">GOGOR STRIKE <span style="color: #00fbff;">V4</span></h1>
+            <p style="color: #666; letter-spacing: 3px; margin-bottom: 2em;">FULL FEATURES • BALANCED BOSS</p>
+            <button class="btn-launch" onclick="startGame()">LAUNCH GAME</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html><script>"use strict";
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+let w, h, player, gameActive = false, frame = 0;
+let bullets = [], eb = [], enemies = [], particles = [], stars = [], boss = null;
+let score = 0, level = 1, shake = 0, weaponLevel = 1, weaponExp = 0, ultCharge = 0;
+
+let highScore = localStorage.getItem('gogor_v4_final') || 0;
+document.getElementById('high-score-txt').innerText = highScore;
+
+// Sistem Warna Acak Musuh
+const getRandomColor = () => {
+    const hue = Math.floor(Math.random() * 360);
+    return { 
+        b: `hsl(${hue}, 80%, 50%)`, // Warna utama
+        l: `hsl(${hue}, 80%, 80%)`, // Warna highlight
+        p: `hsl(${hue}, 100%, 60%)` // Warna partikel
+    };
+};
+
+function init() {
+    w = canvas.width = window.innerWidth;
+    h = canvas.height = window.innerHeight;
+    player = { x: w/2, y: h - 150, tx: w/2, ty: h - 150 };
+    stars = Array.from({length: 100}, () => ({ x: Math.random()*w, y: Math.random()*h, s: Math.random()*2+1 }));
+}
+
+window.addEventListener('resize', init);
+window.addEventListener('mousemove', e => { player.tx = e.clientX; player.ty = e.clientY; });
+window.addEventListener('keydown', e => { if (e.code === 'Space' && ultCharge >= 100) triggerUltimate(); });
+
+function spawnParticle(x, y, color, type, vx, vy) {
+    particles.push({ 
+        x, y, vx: vx || (Math.random()-0.5)*8, vy: vy || (Math.random()-0.5)*8, 
+        l: 1, c: color, s: type === 'fire' ? Math.random()*7+1 : 4 
+    });
+}
+
+// Fungsi gambar pesawat tunggal untuk semua (Player, Musuh, Boss)
+function drawShip(x, y, colorObj, isPlayer, isBoss = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (!isPlayer) ctx.rotate(Math.PI);
+
+    // Engine Fire (Semua pesawat memilikinya)
+    const fireCol = isPlayer ? '#00fbff' : (isBoss ? '#f00' : colorObj.b);
+    [-18, 18].forEach(nx => {
+        if (frame % 2 === 0) spawnParticle(x + (nx * (isPlayer?1:-1)), y + (25 * (isPlayer?1:-1)), fireCol, 'fire', (Math.random()-0.5)*2, isPlayer?5:-5);
+    });
+
+    // Body Metal
+    const bodyGrad = ctx.createLinearGradient(-45, 0, 45, 0);
+    bodyGrad.addColorStop(0, '#111'); 
+    bodyGrad.addColorStop(0.5, isPlayer ? '#bdc3c7' : (isBoss ? '#f00' : colorObj.l)); 
+    bodyGrad.addColorStop(1, '#111');
+    
+    ctx.fillStyle = bodyGrad;
+    if (isBoss) { ctx.shadowBlur = 20; ctx.shadowColor = '#f00'; } // Aura Boss agar beda dari musuh biasa
+
+    ctx.beginPath();
+    ctx.moveTo(0, -40); ctx.lineTo(-50, 15); ctx.lineTo(-15, 25); ctx.lineTo(0, 15); ctx.lineTo(15, 25); ctx.lineTo(50, 15);
+    ctx.closePath(); ctx.fill();
+
+    // Cockpit
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.ellipse(0, -20, 8, 15, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+}
+
+function update() {
+    frame++;
+    if (shake > 0) shake *= 0.92;
+    player.x += (player.tx - player.x) * 0.12;
+    player.y += (player.ty - player.y) * 0.12;
+
+    stars.forEach(s => { s.y += s.s * (boss ? 15 : 6); if (s.y > h) s.y = -20; });
+
+    // Player Shooting (Full Feature)
+    if (frame % (weaponLevel >= 5 ? 3 : 8) === 0) {
+        let px = player.x, py = player.y - 45;
+        if (weaponLevel === 1) bullets.push({x: px, y: py, vx: 0, t: 'std'});
+        else if (weaponLevel === 2) bullets.push({x: px-15, y: py, vx: 0, t: 'std'}, {x: px+15, y: py, vx: 0, t: 'std'});
+        else if (weaponLevel >= 3 && weaponLevel < 5) bullets.push({x: px, y: py, vx: 0, t: 'big'}, {x: px-15, y: py, vx: -3, t: 'std'}, {x: px+15, y: py, vx: 3, t: 'std'});
+        else if (weaponLevel >= 5) { bullets.push({x: px, y: player.y-400, vx: 0, t: 'beam'}); shake = 2; }
+    }
+
+    // Boss Shooting (DIPERLAMBAT sesuai request)
+    if (boss && frame % 25 === 0) { 
+        eb.push({x: boss.x - 20, y: boss.y + 20, vy: 9}, {x: boss.x + 20, y: boss.y + 20, vy: 9});
+    }
+
+    // Process Projectiles
+    eb.forEach((b, i) => {
+        b.y += b.vy;
+        if (Math.hypot(b.x - player.x, b.y - player.y) < 25) gameActive = false;
+        if (b.y > h) eb.splice(i, 1);
+    });
+
+    for (let i = bullets.length - 1; i >= 0; i--) {
+        const b = bullets[i];
+        if (b.t !== 'beam') b.y -= 35; else { b.x = player.x; b.y = player.y - 400; }
+        if (b.y < -500) { bullets.splice(i, 1); continue; }
+
+        enemies.forEach((en, ei) => {
+            if (Math.hypot(en.x-b.x, en.y-b.y) < 45) {
+                if (b.t !== 'beam') bullets.splice(i, 1);
+                en.hp--;
+                if (en.hp <= 0) {
+                    for(let k=0; k<8; k++) spawnParticle(en.x, en.y, en.c.p, 'spark');
+                    enemies.splice(ei, 1); score += 100; ultCharge = Math.min(100, ultCharge+3);
+                    weaponExp++; if (weaponExp > 50 && weaponLevel < 5) { weaponLevel++; weaponExp=0; }
+                }
+            }
+        });
+
+        if (boss && Math.hypot(b.x-boss.x, b.y-boss.y) < 50) {
+            boss.hp -= (weaponLevel * 10); if (b.t !== 'beam') bullets.splice(i, 1);
+            if (boss.hp <= 0) { boss = null; score += 20000; level++; eb = []; document.getElementById('boss-ui').style.display='none'; }
+        }
+    }
+
+    if (score > highScore) { highScore = score; localStorage.setItem('gogor_v4_final', highScore); document.getElementById('high-score-txt').innerText = highScore; }
+
+    // Spawning enemies with many colors
+    if (frame % 40 === 0 && !boss) enemies.push({ x: Math.random()*w, y: -60, s: 5+level, c: getRandomColor(), hp: 2 });
+    
+    enemies.forEach((en, i) => {
+        en.y += en.s;
+        if (Math.hypot(en.x-player.x, en.y-player.y) < 50) gameActive = false;
+        if (en.y > h + 100) enemies.splice(i, 1);
+    });
+
+    // Boss Activation
+    if (score > 0 && score % 15000 < 150 && !boss) {
+        boss = {x: w/2, y: -100, hp: 4000*level, max: 4000*level};
+        document.getElementById('boss-ui').style.display='block';
+    }
+    if (boss) { 
+        boss.y < 150 ? boss.y += 3 : boss.x = w/2 + Math.sin(frame*0.04)*(w/3);
+    }
+
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].x += particles[i].vx; particles[i].y += particles[i].vy; particles[i].l -= 0.035;
+        if (particles[i].l <= 0) particles.splice(i, 1);
+    }
+
+    document.getElementById('score-txt').innerText = score;
+    document.getElementById('wpn-txt').innerText = "LV. " + weaponLevel;
+    document.getElementById('ult-fill').style.width = ultCharge + "%";
+    if (boss) document.getElementById('boss-hp-fill').style.width = (boss.hp/boss.max*100) + "%";
+}
+
+function draw() {
+    ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
+    ctx.save();
+    if (shake > 0.5) ctx.translate(Math.random()*shake-shake/2, Math.random()*shake-shake/2);
+    
+    stars.forEach(s => { ctx.fillStyle = '#fff'; ctx.globalAlpha = s.s/4; ctx.fillRect(s.x, s.y, 1, s.s*12); });
+    particles.forEach(p => { ctx.globalAlpha = p.l; ctx.fillStyle = p.c; ctx.beginPath(); ctx.arc(p.x, p.y, p.s*p.l, 0, Math.PI*2); ctx.fill(); });
+    
+    if (boss) drawShip(boss.x, boss.y, null, false, true);
+    enemies.forEach(en => drawShip(en.x, en.y, en.c, false));
+    if (gameActive) drawShip(player.x, player.y, null, true);
+
+    // Draw Projectiles
+    eb.forEach(b => { ctx.fillStyle = '#f00'; ctx.shadowBlur = 10; ctx.shadowColor = '#f00'; ctx.beginPath(); ctx.arc(b.x, b.y, 6, 0, Math.PI*2); ctx.fill(); });
+    bullets.forEach(b => {
+        ctx.shadowBlur = 15; ctx.shadowColor = '#00fbff';
+        if (b.t === 'beam') { ctx.fillStyle = '#fff'; ctx.fillRect(b.x-45, b.y, 90, 1000); }
+        else { ctx.fillStyle = b.t === 'big' ? '#ffaa00' : '#fff'; ctx.fillRect(b.x-2, b.y, 4, 30); }
+    });
+    ctx.restore();
+
+    if (gameActive) requestAnimationFrame(loop);
+    else document.getElementById('overlay').style.display = 'flex';
+}
+
+function loop() { update(); draw(); }
+function triggerUltimate() { 
+    ultCharge = 0; shake = 80; 
+    enemies.forEach(en => { for(let k=0; k<10; k++) spawnParticle(en.x, en.y, en.c.p, 'spark'); });
+    enemies = []; if(boss) boss.hp -= 1500; eb = [];
+}
+function startGame() { 
+    score = 0; level = 1; weaponLevel = 1; ultCharge = 0; enemies = []; bullets = []; eb = []; boss = null; 
+    gameActive = true; loop(); document.getElementById('overlay').style.display = 'none'; 
+}
+init();</script></body></html>
