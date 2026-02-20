@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevVault Pro - Fixed Version</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+    <style>
+        :root { 
+            --bg: #0f172a; 
+            --card: #1e293b; 
+            --primary: #38bdf8; 
+            --text: #f1f5f9; 
+            --success: #10b981;
+            --warning: #fbbf24;
+            --danger: #f43f5e;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 15px; margin: 0; }
+        .container { max-width: 800px; margin: auto; }
+        
+        /* Header & Nav */
+        .header { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; margin-bottom: 10px; }
+        .btn-group { display: flex; gap: 8px; }
+        .btn-outline { background: none; border: 1px solid #475569; color: #94a3b8; padding: 6px 14px; border-radius: 6px; cursor: pointer; transition: 0.2s; font-size: 13px; }
+        .btn-outline:hover { background: #334155; color: #fff; }
+        .btn-export { border-color: var(--success); color: var(--success); }
+        .btn-export:hover { background: var(--success); }
+
+        /* Form Card */
+        .card { background: var(--card); padding: 15px; border-radius: 12px; border: 1px solid #334155; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        input, textarea, select { width: 100%; padding: 10px; margin-bottom: 10px; background: #0f172a; border: 1px solid #334155; color: #fff; border-radius: 6px; box-sizing: border-box; font-family: inherit; }
+        input:focus { border-color: var(--primary); outline: none; }
+        
+        #sb { width: 100%; padding: 12px; background: var(--primary); border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #0f172a; font-size: 14px; }
+
+        /* Search Bar */
+        .search-bar { border: 2px solid var(--primary); position: sticky; top: 10px; z-index: 100; font-size: 15px; margin-bottom: 20px; }
+
+        /* Code Display */
+        .snippet-container { background: #1d1e22; border-radius: 8px; border: 1px solid #334155; overflow: hidden; margin-top: 10px; }
+        .code-header { background: #2d2e34; padding: 8px 12px; display: flex; justify-content: flex-end; gap: 8px; border-bottom: 1px solid #444; }
+        .code-header button { padding: 5px 12px; font-size: 11px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: #fff; }
+        
+        .btn-edit { background: var(--warning); color: #000 !important; }
+        .btn-del { background: var(--danger); }
+        .btn-copy { background: #64748b; }
+        
+        pre { margin: 0 !important; padding: 15px !important; font-size: 13px; max-height: 400px; overflow: auto; }
+        .title-text { font-weight: bold; color: var(--primary); font-size: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h2 style="margin:0; color:var(--primary)">DevVault Pro</h2>
+        <div class="btn-group">
+            <input type="file" id="fileInput" hidden accept=".json" onchange="importData(event)">
+            <button onclick="document.getElementById('fileInput').click()" class="btn-outline">📥 Impor</button>
+            <button onclick="exportData()" class="btn-outline btn-export">📤 Ekspor</button>
+        </div>
+    </div>
+
+    <div class="card">
+        <input type="hidden" id="editIndex" value="-1">
+        <input type="text" id="t" placeholder="Judul Snippet...">
+        <select id="l">
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+            <option value="cpp">C++ / MQL5</option>
+            <option value="html">HTML</option>
+            <option value="css">CSS</option>
+        </select>
+        <textarea id="c" style="height:120px" placeholder="Tempel kode di sini..."></textarea>
+        <button onclick="save()" id="sb">Simpan Snippet</button>
+    </div>
+
+    <input type="text" id="q" class="search-bar" placeholder="🔍 Cari judul snippet..." onkeyup="render()">
+    
+    <div id="list"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js"></script>
+<script>
+    let db = JSON.parse(localStorage.getItem('v_db')) || [];
+    const $ = id => document.getElementById(id);
+
+    // 1. FUNGSI SIMPAN (Update & Create)
+    function save() {
+        const index = parseInt($('editIndex').value);
+        const t = $('t').value.trim();
+        const l = $('l').value;
+        const c = $('c').value.trim();
+
+        if (!t || !c) return alert("Judul dan Kode tidak boleh kosong!");
+
+        if (index > -1) {
+            // Mode Update: Ganti data pada index yang sama
+            db[index] = { ...db[index], t, l, c };
+            alert("Snippet berhasil diperbarui!");
+        } else {
+            // Mode Simpan Baru
+            db.unshift({ id: Date.now().toString(), t, l, c });
+        }
+        
+        sync();
+        resetForm();
+    }
+
+    // 2. FUNGSI RENDER (Daftar Snippet)
+    function render() {
+        const query = $('q').value.toLowerCase();
+        
+        // Render dengan map dan melacak index asli (originalIndex)
+        $('list').innerHTML = db.map((s, originalIndex) => {
+            // Filter pencarian
+            if (!s.t.toLowerCase().includes(query)) return '';
+
+            return `
+            <div class="card">
+                <div class="title-text">${escapeHTML(s.t)} <small style="color:#64748b; font-weight:normal">(${s.l})</small></div>
+                <div class="snippet-container">
+                    <div class="code-header">
+                        <button class="btn-copy" onclick="copyCode(this, ${originalIndex})">Salin</button>
+                        <button class="btn-edit" onclick="prepareEdit(${originalIndex})">Edit</button>
+                        <button class="btn-del" onclick="del(${originalIndex})">Hapus</button>
+                    </div>
+                    <pre><code class="language-${s.l}">${escapeHTML(s.c)}</code></pre>
+                </div>
+            </div>`;
+        }).join('');
+        
+        Prism.highlightAll();
+    }
+
+    // 3. FUNGSI EDIT (Menarik data ke form)
+    window.prepareEdit = function(index) {
+        const data = db[index];
+        if (data) {
+            $('editIndex').value = index; // Simpan index ke hidden input
+            $('t').value = data.t;
+            $('l').value = data.l;
+            $('c').value = data.c;
+            
+            // Ubah tampilan tombol simpan
+            $('sb').innerText = "Update Snippet Sekarang";
+            $('sb').style.background = "var(--warning)";
+            
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+    };
+
+    // 4. FUNGSI HAPUS
+    function del(index) {
+        if(confirm('Hapus snippet ini?')) {
+            db.splice(index, 1);
+            sync();
+        }
+    }
+
+    // 5. EKSPOR & IMPOR JSON
+    function exportData() {
+        if(db.length === 0) return alert("Tidak ada data!");
+        const blob = new Blob([JSON.stringify(db, null, 2)], {type: 'application/json'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `DevVault_Backup_${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function importData(e) {
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = x => {
+            try {
+                const imported = JSON.parse(x.target.result);
+                if(Array.isArray(imported)) {
+                    db = [...imported, ...db];
+                    // Hapus duplikat berdasarkan ID
+                    db = Array.from(new Map(db.map(item => [item.id, item])).values());
+                    sync();
+                    alert("Impor Berhasil!");
+                }
+            } catch(e) { alert("File JSON tidak valid!"); }
+            e.target.value = '';
+        };
+        reader.readAsText(file);
+    }
+
+    // UTILITY
+    function sync() {
+        localStorage.setItem('v_db', JSON.stringify(db));
+        render();
+    }
+
+    function resetForm() {
+        $('editIndex').value = "-1";
+        $('t').value = '';
+        $('c').value = '';
+        $('sb').innerText = "Simpan Snippet";
+        $('sb').style.background = "var(--primary)";
+    }
+
+    function copyCode(btn, index) {
+        navigator.clipboard.writeText(db[index].c).then(() => {
+            const oldText = btn.innerText;
+            btn.innerText = "Tersalin!";
+            btn.style.background = "var(--success)";
+            setTimeout(() => {
+                btn.innerText = oldText;
+                btn.style.background = "#64748b";
+            }, 1500);
+        });
+    }
+
+    function escapeHTML(str) {
+        return str.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    // Jalankan render saat pertama kali buka
+    render();
+</script>
+</body>
+</html>
