@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Laporan Kerja</title>
+    <style>
+        :root {
+            --primary: #1a73e8;
+            --success: #24c695;
+            --danger: #d93025;
+            --warning: #f6871f;
+            --surface: #ffffff;
+            --background: #f8f9fa;
+            --text-main: #202124;
+            --text-sub: #5f6368;
+        }
+
+        body { font-family: 'Segoe UI', Roboto, sans-serif; background-color: var(--background); margin: 0; padding: 0; display: flex; justify-content: center; }
+        .app-container { width: 100%; max-width: 1100px; padding: 16px; box-sizing: border-box; }
+        header { text-align: center; padding: 10px 0; }
+        header h2 { margin: 0; font-size: 24px; color: var(--primary); font-weight: bold; }
+
+        .grid-layout { display: grid; grid-template-columns: 360px 1fr; gap: 20px; align-items: start; }
+        @media (max-width: 850px) { .grid-layout { grid-template-columns: 1fr; } }
+
+        .card { background: var(--surface); border-radius: 16px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px; }
+        label { display: block; font-size: 11px; font-weight: 600; color: var(--text-sub); margin-bottom: 6px; text-transform: uppercase; }
+        
+        input, select { 
+            width: 100%; padding: 12px; border: 1px solid #dadce0; border-radius: 8px; 
+            font-size: 15px; margin-bottom: 15px; box-sizing: border-box; outline: none; 
+        }
+
+        .btn { 
+            width: 100%; padding: 14px; border: none; border-radius: 12px; 
+            font-weight: 600; font-size: 14px; cursor: pointer; 
+            display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 8px; 
+        }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-outline { background: transparent; border: 1px solid #dadce0; color: var(--text-sub); }
+
+        .stats-container { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+        .stat-item { padding: 12px; border-radius: 12px; text-align: center; color: white; font-size: 11px; }
+        .stat-item b { display: block; font-size: 14px; margin-top: 4px; }
+
+        .table-wrapper { overflow-x: auto; background: white; border-radius: 12px; border: 1px solid #eee; }
+        table { width: 100%; border-collapse: collapse; min-width: 500px; }
+        th { background: #f8f9fa; padding: 12px; font-size: 11px; color: var(--text-sub); border-bottom: 2px solid #eee; }
+        td { padding: 12px; border-top: 1px solid #eee; text-align: center; font-size: 13px; }
+
+        .action-btns { display: flex; gap: 8px; justify-content: center; }
+        .btn-edit { color: var(--primary); border: 1px solid var(--primary); background: #e8f0fe; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+        .btn-del { color: var(--danger); border: 1px solid var(--danger); background: #fce8e6; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+
+        .recap-card { background: #e8f0fe; padding: 15px; border-radius: 12px; border: 1px solid #d2e3fc; }
+        .recap-line { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; }
+        .recap-total { border-top: 1px dashed #aecbfa; margin-top: 8px; padding-top: 8px; font-weight: bold; color: var(--primary); font-size: 15px; }
+        
+        .period-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .nav-arrow { background: var(--primary); color: white; border: none; padding: 6px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+        
+        /* Tombol Hapus Ringkasan */
+        .recap-danger-zone { margin-top: 12px; padding-top: 10px; border-top: 1px solid #aecbfa; display: flex; justify-content: flex-end; }
+        
+        /* Grup Berbagi */
+        .share-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+        .share-btn { flex: 1; min-width: 80px; padding: 10px; border-radius: 8px; border: none; font-size: 11px; font-weight: bold; cursor: pointer; color: white; display: flex; align-items: center; justify-content: center; gap: 5px; }
+        .bg-wa { background: #25D366; }
+        .bg-sms { background: #f6871f; }
+        .bg-mail { background: #d93025; }
+        .bg-system { background: #6c757d; }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <h2>LAPORAN KERJA</h2>
+    </header>
+
+    <div class="grid-layout">
+        <div class="panel-input">
+            <div class="card">
+                <label>⚙️ Siklus Tutup Buku</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <input type="number" id="cycleStart" value="26" onchange="saveSettings()">
+                    <input type="number" id="cycleEnd" value="25" onchange="saveSettings()">
+                </div>
+
+                <label>📅 Data Harian</label>
+                <input type="date" id="jobDate" onchange="updateViewByDate()">
+                <input type="text" id="job" placeholder="Pekerjaan...">
+                <select id="status">
+                    <option value="Masuk">✅ Masuk</option>
+                    <option value="Mangkir">❌ Mangkir</option>
+                    <option value="Libur">🔴 Libur</option>
+                </select>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <input type="number" id="msk" placeholder="Masuk (Rp)">
+                    <input type="number" id="klr" placeholder="Keluar (Rp)">
+                </div>
+                <input type="hidden" id="editIndex" value="-1">
+                <button class="btn btn-primary" id="submitBtn" onclick="tambahData()">SIMPAN LAPORAN</button>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <button class="btn btn-outline" onclick="eksporData()">💾 BACKUP</button>
+                <button class="btn btn-outline" onclick="document.getElementById('fileIn').click()">📂 IMPOR</button>
+            </div>
+            <input type="file" id="fileIn" style="display:none" accept=".json" onchange="imporData(event)">
+        </div>
+
+        <div class="panel-data">
+            <div class="stats-container">
+                <div class="stat-item" style="background: var(--warning);" id="statToday"></div>
+                <div class="stat-item" style="background: var(--primary);" id="statYear"></div>
+                <div class="stat-item" style="background: #343a40;" id="statAttendance"></div>
+            </div>
+
+            <div class="card">
+                <div class="period-nav">
+                    <button class="nav-arrow" onclick="changePeriod(-1)">◀ Bulan Lalu</button>
+                    <label style="margin:0">📊 Ringkasan Laporan</label>
+                    <button class="nav-arrow" onclick="changePeriod(1)">Bulan Depan ▶</button>
+                </div>
+                
+                <div id="recapSection" class="recap-card"></div>
+                
+                <div class="share-group">
+                    <button class="share-btn bg-wa" onclick="shareData('wa')">WhatsApp</button>
+                    <button class="share-btn bg-sms" onclick="shareData('sms')">SMS</button>
+                    <button class="share-btn bg-mail" onclick="shareData('mail')">Gmail</button>
+                    <button class="share-btn bg-system" onclick="shareData('system')">Lainnya</button>
+                </div>
+            </div>
+
+            <div class="table-wrapper">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Tgl</th>
+                            <th style="text-align:left">Pekerjaan</th>
+                            <th>Saldo (Rp)</th>
+                            <th>Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let db = JSON.parse(localStorage.getItem('work_pro_db')) || [];
+    let settings = JSON.parse(localStorage.getItem('work_settings')) || { startDay: 26, endDay: 25 };
+    let viewDate = new Date();
+
+    document.getElementById('cycleStart').value = settings.startDay;
+    document.getElementById('cycleEnd').value = settings.endDay;
+    document.getElementById('jobDate').value = viewDate.toISOString().split('T')[0];
+
+    function saveSettings() {
+        settings.startDay = parseInt(document.getElementById('cycleStart').value) || 26;
+        settings.endDay = parseInt(document.getElementById('cycleEnd').value) || 25;
+        localStorage.setItem('work_settings', JSON.stringify(settings));
+        calculateAll();
+    }
+
+    function updateViewByDate() {
+        viewDate = new Date(document.getElementById('jobDate').value);
+        calculateAll();
+    }
+
+    function changePeriod(offset) {
+        viewDate.setMonth(viewDate.getMonth() + offset);
+        document.getElementById('jobDate').value = viewDate.toISOString().split('T')[0];
+        calculateAll();
+    }
+
+    function getPeriodRange(baseDate) {
+        let y = baseDate.getFullYear(), m = baseDate.getMonth(), d = baseDate.getDate();
+        let start = (d >= settings.startDay) ? new Date(y, m, settings.startDay) : new Date(y, m - 1, settings.startDay);
+        let end = (d >= settings.startDay) ? new Date(y, m + 1, settings.endDay) : new Date(y, m, settings.endDay);
+        return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0] };
+    }
+
+    function calculateAll() {
+        const tbody = document.getElementById('tableBody');
+        tbody.innerHTML = '';
+        let range = getPeriodRange(viewDate);
+        let stats = { today: 0, pMsk: 0, pKlr: 0, ySal: 0, msk: 0 };
+        let now = new Date().toISOString().split('T')[0];
+
+        db.sort((a,b) => new Date(b.fullDate) - new Date(a.fullDate));
+
+        db.forEach((item, index) => {
+            let m = parseInt(item.msk) || 0, k = parseInt(item.klr) || 0;
+            if(item.fullDate === now) stats.today += (m - k);
+            if(item.fullDate.startsWith('2026')) {
+                stats.ySal += (m - k);
+                if(item.status === 'Masuk') stats.msk++;
+            }
+            if(item.fullDate >= range.start && item.fullDate <= range.end) {
+                stats.pMsk += m; stats.pKlr += k;
+            }
+
+            tbody.innerHTML += `<tr>
+                <td>${item.fullDate.split('-')[2]}/${item.fullDate.split('-')[1]}</td>
+                <td style="text-align:left"><b>${item.job}</b></td>
+                <td><span style="color:green">+${m.toLocaleString()}</span><br><span style="color:red">-${k.toLocaleString()}</span></td>
+                <td>
+                    <div class="action-btns">
+                        <button class="btn-edit" onclick="editData(${index})">✏️</button>
+                        <button class="btn-del" onclick="hapusData(${index})">🗑️</button>
+                    </div>
+                </td>
+            </tr>`;
+        });
+
+        document.getElementById('statToday').innerHTML = `<span>HARI INI</span><b>Rp ${stats.today.toLocaleString()}</b>`;
+        document.getElementById('statYear').innerHTML = `<span>TOTAL 2026</span><b>Rp ${stats.ySal.toLocaleString()}</b>`;
+        document.getElementById('statAttendance').innerHTML = `<span>HADIR 2026</span><b>${stats.msk} HARI</b>`;
+
+        // BAGIAN RINGKASAN DENGAN TOMBOL HAPUS PERIODE
+        document.getElementById('recapSection').innerHTML = `
+            <div class="recap-line"><span>📅 Rentang:</span> <b>${range.start} s/d ${range.end}</b></div>
+            <div class="recap-line"><span>💰 Masuk:</span> <b style="color:green">Rp ${stats.pMsk.toLocaleString()}</b></div>
+            <div class="recap-line"><span>💸 Keluar:</span> <b style="color:red">Rp ${stats.pKlr.toLocaleString()}</b></div>
+            <div class="recap-line recap-total"><span>BERSIH:</span> <span>Rp ${(stats.pMsk - stats.pKlr).toLocaleString()}</span></div>
+            <div class="recap-danger-zone">
+                <button class="btn-del" onclick="hapusSeluruhPeriode('${range.start}', '${range.end}')">🗑️ Hapus Ringkasan (Hapus Semua Data Periode Ini)</button>
+            </div>
+        `;
+        localStorage.setItem('work_pro_db', JSON.stringify(db));
+    }
+
+    function hapusSeluruhPeriode(start, end) {
+        if(confirm(`PERINGATAN! Semua data harian dari tanggal ${start} sampai ${end} akan dihapus permanen. Lanjutkan?`)) {
+            db = db.filter(item => !(item.fullDate >= start && item.fullDate <= end));
+            calculateAll();
+        }
+    }
+
+    function shareData(platform) {
+        let range = getPeriodRange(viewDate);
+        let filtered = db.filter(i => i.fullDate >= range.start && i.fullDate <= range.end);
+        let m = filtered.reduce((a, b) => a + (parseInt(b.msk) || 0), 0);
+        let k = filtered.reduce((a, b) => a + (parseInt(b.klr) || 0), 0);
+        let total = m - k;
+
+        let teks = `*LAPORAN KERJA*\nPeriode: ${range.start} s/d ${range.end}\n----------\nMasuk: Rp ${m.toLocaleString()}\nKeluar: Rp ${k.toLocaleString()}\n----------\n*BERSIH: Rp ${total.toLocaleString()}*`;
+
+        if(platform === 'wa') window.open(`https://wa.me/?text=${encodeURIComponent(teks)}`, '_blank');
+        if(platform === 'sms') window.open(`sms:?body=${encodeURIComponent(teks)}`, '_blank');
+        if(platform === 'mail') window.open(`mailto:?subject=Laporan Kerja&body=${encodeURIComponent(teks)}`, '_blank');
+        if(platform === 'system') {
+            if (navigator.share) navigator.share({ title: 'Laporan Kerja', text: teks });
+            else alert("Fitur tidak didukung browser ini.");
+        }
+    }
+
+    function tambahData() {
+        const job = document.getElementById('job').value;
+        const msk = document.getElementById('msk').value || 0;
+        const klr = document.getElementById('klr').value || 0;
+        const fullDate = document.getElementById('jobDate').value;
+        const editIdx = parseInt(document.getElementById('editIndex').value);
+        if(!job) return alert("Isi pekerjaan!");
+        const dataObj = { fullDate, job, status: document.getElementById('status').value, msk, klr };
+        if(editIdx > -1) { db[editIdx] = dataObj; document.getElementById('editIndex').value = "-1"; document.getElementById('submitBtn').innerText = "SIMPAN LAPORAN"; }
+        else { db.push(dataObj); }
+        document.getElementById('job').value = ''; document.getElementById('msk').value = ''; document.getElementById('klr').value = '';
+        calculateAll();
+    }
+
+    function editData(i) {
+        const item = db[i];
+        document.getElementById('jobDate').value = item.fullDate;
+        document.getElementById('job').value = item.job;
+        document.getElementById('status').value = item.status;
+        document.getElementById('msk').value = item.msk;
+        document.getElementById('klr').value = item.klr;
+        document.getElementById('editIndex').value = i;
+        document.getElementById('submitBtn').innerText = "UPDATE DATA";
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function hapusData(i) { if(confirm("Hapus baris ini?")) { db.splice(i, 1); calculateAll(); } }
+
+    function eksporData() {
+        const blob = new Blob([JSON.stringify(db)], {type: "application/json"});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `Laporan_Kerja.json`;
+        a.click();
+    }
+
+    function imporData(e) {
+        const reader = new FileReader();
+        reader.onload = (ev) => { db = JSON.parse(ev.target.result); calculateAll(); };
+        reader.readAsText(e.target.files[0]);
+    }
+
+    calculateAll();
+</script>
+</body>
+</html>
+
