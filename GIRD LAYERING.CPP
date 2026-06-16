@@ -70,8 +70,8 @@ input double MaxLotLimit = 3.0;
 //--- ADDED: TRAILING PROFIT BERJALAN
 input group "== TRAILING PROFIT BERJALAN =="
 input bool EnableTrailingProfit = true;
-input double TrailingProfitStartPoints = 5000;
-input double TrailingProfitStepPoints = 1000;
+input double TrailingProfitStartPoints = 2222;
+input double TrailingProfitStepPoints = 1111;
 input double TrailingProfitMinProfitUSD = 0.0;
 
 //--- GLOBAL VARIABLES
