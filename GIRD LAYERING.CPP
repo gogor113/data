@@ -6,8 +6,10 @@
 //+------------------------------------------------------------------+
 #property copyright "Telegram @andrianto13"
 #property version   "12.25"
-#property description "HYBRID GRID LAYERING STRATEGY"
-#property description "TEST ON DEMO FIRST!"
+#property description "GIRD LAYERING SMART"
+#property description "WAJIB TEST DI AKUN DEMO"
+#property description "KAMI TIDAK BERTANGGUNGJAWAB ATAS SEGALA KERUGIAN"
+#property description "HIGH RISK HIGH RETURN"
 #property strict
 
 #include <Trade\Trade.mqh>
@@ -21,7 +23,7 @@ enum ENUM_TRADE_MODE {
 };
 
 //--- INTERNAL SECURITY
-const datetime INTERNAL_EXPIRY = D'2027.12.28 23:59';
+const datetime INTERNAL_EXPIRY = D'2027.08.08 23:59';
 const int MAGIC_NUMBER = 109131995;
 
 //--- INPUT PARAMETERS
@@ -38,18 +40,18 @@ input double Auto_Switch_Price = 0.0;
 input ENUM_TRADE_MODE Target_Mode_After_Switch = MODE_BOTH;
 
 input group "== PURE LINEAR SETTINGS (PHASE 2) =="
-input int PureLinearStep = 155;
+input int PureLinearStep = 555;
 input double PureLinearLotAdd = 0.02;
 input int PureLinearInterval = 33;
 
 input group "== GRID LOGIC =="
 input int StepPoints = 1111;
 input int AntiStackDist = 1100;
-input int MaxSpread = 500;
+input int MaxSpread = 555;
 
 input group "== DYNAMIC TRAILING =="
 input int TrailingStartPoints = 4444;
-input int TrailingStepPoints = 1111;
+input int TrailingStepPoints = 2222;
 
 input group "== CYCLE PROTECTION =="
 input double CutlossUSD = 55000.00;
@@ -60,12 +62,12 @@ input group "== RESOURCE MANAGEMENT =="
 input bool AutoPurgeLog = true;
 
 input group "== HYBRID RECOVERY (PHASE 3) =="
-input int RecoveryThreshold = 555;
+input int RecoveryThreshold = 777;
 input int RecoveryLayerStep = 33;
 input double ExpMultiplier = 2.0;
 input double MaxLotLimit = 3.0;
 
-//--- ADDITIONAL INPUT: TRAILING PROFIT
+//--- ADDED: TRAILING PROFIT BERJALAN
 input group "== TRAILING PROFIT BERJALAN =="
 input bool EnableTrailingProfit = true;
 input double TrailingProfitStartPoints = 5000;
@@ -88,11 +90,10 @@ bool isModeSwitched = false;
 double LastKnownPrice = 0;
 ENUM_TRADE_MODE currentTradeMode;
 
-//--- TRAILING PROFIT VARIABLES
+//--- ADDED: TRAILING PROFIT GLOBAL VARIABLES
 double highestGlobalProfit = 0.0;
-double trailingSLPrice = 0.0;
-bool trailingActive = false;
-double lastTrailingSLPrice = 0.0;
+double globalTrailingSL = 0.0;
+bool globalTrailingActive = false;
 
 //--- FUNCTION PROTOTYPES
 int CountPositions();
@@ -114,8 +115,10 @@ void SetTxt(string n, string t, int x, int y, color c, int s, string font="Arial
 void DrawLine(string n, int x, int y, int w, color c);
 void SetBtn(string n, string t, int x, int y, int w, int h, color bg, color tc);
 void UpdateDashboardData();
-void ManageTrailingProfit(MqlTick &t);
-void ApplyTrailingProfitSL(MqlTick &t);
+
+//--- ADDED: TRAILING PROFIT FUNCTIONS
+void ManageGlobalTrailing(MqlTick &t);
+void ApplyGlobalTrailingSL(MqlTick &t);
 double GetAverageOpenPrice();
 double GetTotalVolume();
 
@@ -135,11 +138,10 @@ int OnInit() {
    isModeSwitched = false;
    currentTradeMode = Trade_Mode;
    
-   //--- INIT TRAILING PROFIT VARIABLES
+   //--- INIT GLOBAL TRAILING
    highestGlobalProfit = 0.0;
-   trailingSLPrice = 0.0;
-   trailingActive = false;
-   lastTrailingSLPrice = 0.0;
+   globalTrailingSL = 0.0;
+   globalTrailingActive = false;
    
    handleEMA = iMA(_Symbol, _Period, EMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(handleEMA == INVALID_HANDLE) return(INIT_FAILED);
@@ -188,7 +190,7 @@ void OnTick() {
       }
    }
 
-   //--- 2. TRIGGER CLOSE ALL LOGIC (UPDATE SEBELUM digunakan)
+   //--- 2. TRIGGER CLOSE ALL LOGIC
    double currentPrice = t.bid;
    if(Trigger_CloseAll_Price > 0 && LastKnownPrice > 0) {
       if((currentPrice >= Trigger_CloseAll_Price && LastKnownPrice < Trigger_CloseAll_Price) ||
@@ -219,11 +221,10 @@ void OnTick() {
    if(cycleCompleted) {
       if(totalPos == 0) {
          cycleCompleted = false;
-         //--- RESET TRAILING PROFIT VARIABLES KETIKA CYCLE RESET
+         //--- RESET GLOBAL TRAILING
          highestGlobalProfit = 0.0;
-         trailingSLPrice = 0.0;
-         trailingActive = false;
-         lastTrailingSLPrice = 0.0;
+         globalTrailingSL = 0.0;
+         globalTrailingActive = false;
       }
       return;
    }
@@ -236,9 +237,9 @@ void OnTick() {
       return;
    }
 
-   //--- TRAILING PROFIT MANAGEMENT (SEBELUM GRID EXECUTION)
+   //--- ADDED: GLOBAL TRAILING PROFIT MANAGEMENT (SEBELUM GRID EXECUTION)
    if(EnableTrailingProfit) {
-      ManageTrailingProfit(t);
+      ManageGlobalTrailing(t);
    }
 
    //--- 3. GRID EXECUTION LOGIC
@@ -285,7 +286,7 @@ void OnTick() {
       }
    }
 
-   // 4. TRAILING MANAGEMENT
+   // 4. TRAILING MANAGEMENT (ORIGINAL - TIDAK BERUBAH)
    ManageLatestPositionTrailing(t);
    
    // Refresh dashboard
@@ -325,152 +326,133 @@ void OnTradeTransaction(const MqlTradeTransaction& trans,
 }
 
 //+------------------------------------------------------------------+
-//| ManageTrailingProfit - Trailing Berdasarkan Global Profit       |
+//| ManageGlobalTrailing - GLOBAL TRAILING PROFIT                   |
 //+------------------------------------------------------------------+
-void ManageTrailingProfit(MqlTick &t) {
+void ManageGlobalTrailing(MqlTick &t) {
    int totalPos = CountPositions();
    if(totalPos == 0) {
-      // RESET KETIKA TIDAK ADA POSISI
       highestGlobalProfit = 0.0;
-      trailingSLPrice = 0.0;
-      trailingActive = false;
-      lastTrailingSLPrice = 0.0;
+      globalTrailingSL = 0.0;
+      globalTrailingActive = false;
       return;
    }
    
    double currentPL = CalculateTotalProfit();
    
-   //--- UPDATE HIGHEST GLOBAL PROFIT
+   // Update highest profit
    if(currentPL > highestGlobalProfit) {
       highestGlobalProfit = currentPL;
-      trailingActive = false; // Reset status, akan diaktifkan ulang jika profit mencukupi
-      Print("GGR-TP: New Highest Global Profit: ", DoubleToString(highestGlobalProfit, 2), " USD");
+      Print("GGR-GTP: New Highest Global Profit: ", DoubleToString(highestGlobalProfit, 2), " USD");
    }
    
-   //--- CEK APAKAH PROFIT MENCUKUPI UNTUK AKTIFKAN TRAILING
-   double startPoints = TrailingProfitStartPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double stepPoints = TrailingProfitStepPoints * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   double minProfit = TrailingProfitMinProfitUSD;
-   
-   // HANYA AKTIFKAN TRAILING JIKA GLOBAL PROFIT > 0
+   // Deactivate if profit <= 0
    if(currentPL <= 0) {
-      // JIKA PROFIT NEGATIF, RESET TRAILING
-      if(trailingActive) {
-         trailingActive = false;
-         trailingSLPrice = 0.0;
-         Print("GGR-TP: Trailing deactivated - Global profit is negative (", DoubleToString(currentPL, 2), " USD)");
+      if(globalTrailingActive) {
+         globalTrailingActive = false;
+         globalTrailingSL = 0.0;
+         Print("GGR-GTP: Deactivated - Global profit is negative");
       }
       return;
    }
    
-   //--- JIKA PROFIT POSITIF
-   if(!trailingActive) {
-      // CEK APAKAH PROFIT MENCUKUPI UNTUK START TRAILING
-      if(currentPL >= minProfit) {
-         double avgPrice = GetAverageOpenPrice();
-         double totalVol = GetTotalVolume();
+   // Check if enough profit to activate
+   if(!globalTrailingActive && currentPL >= TrailingProfitMinProfitUSD) {
+      double totalVol = GetTotalVolume();
+      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      
+      if(tickValue > 0 && totalVol > 0) {
          double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-         
-         // HITUNG SL BERDASARKAN PROFIT TRAILING
          double targetProfit = highestGlobalProfit - TrailingProfitStepPoints;
-         if(targetProfit < minProfit) targetProfit = minProfit;
+         if(targetProfit < TrailingProfitMinProfitUSD) targetProfit = TrailingProfitMinProfitUSD;
          
-         // KONVERSI PROFIT KE HARGA
-         double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-         double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-         
-         if(tickValue > 0 && totalVol > 0) {
-            double profitPerPoint = totalVol * tickValue / tickSize;
-            if(profitPerPoint > 0) {
-               double profitInPoints = targetProfit / profitPerPoint;
-               
-               // TENTUKAN SL PRICE
-               if(totalPos > 0) {
-                  // AMBIL POSISI PERTAMA UNTUK DAPATKAN ARAH
-                  ulong ticket = PositionGetTicket(0);
-                  if(ticket > 0 && PositionSelectByTicket(ticket)) {
-                     ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-                     double pointSize = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+         // Get first position to determine direction
+         for(int i = 0; i < PositionsTotal(); i++) {
+            ulong ticket = PositionGetTicket(i);
+            if(ticket > 0 && PositionSelectByTicket(ticket)) {
+               if(PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER && 
+                  PositionGetString(POSITION_SYMBOL) == _Symbol) {
+                  
+                  ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+                  double profitPerPoint = totalVol * tickValue / tickSize;
+                  
+                  if(profitPerPoint > 0) {
+                     double profitInPoints = targetProfit / profitPerPoint;
                      
                      if(type == POSITION_TYPE_BUY) {
-                        trailingSLPrice = t.bid - (profitInPoints * pointSize);
+                        globalTrailingSL = t.bid - (profitInPoints * point);
                      } else {
-                        trailingSLPrice = t.ask + (profitInPoints * pointSize);
+                        globalTrailingSL = t.ask + (profitInPoints * point);
                      }
                      
-                     trailingActive = true;
-                     lastTrailingSLPrice = trailingSLPrice;
-                     Print("GGR-TP: Trailing activated! Global Profit: ", DoubleToString(currentPL, 2),
-                           " USD, SL Price: ", DoubleToString(trailingSLPrice, _Digits),
-                           " (Target Profit: ", DoubleToString(targetProfit, 2), " USD)");
+                     globalTrailingActive = true;
+                     Print("GGR-GTP: ACTIVATED! Profit: ", DoubleToString(currentPL, 2),
+                           " USD, SL: ", DoubleToString(globalTrailingSL, _Digits));
+                     break;
                   }
                }
             }
          }
       }
-   } else {
-      //--- TRAILING SUDAH AKTIF, UPDATE SL JIKA PROFIT NAIK
-      if(currentPL > highestGlobalProfit - TrailingProfitStepPoints) {
-         // HITUNG ULANG SL BERDASARKAN PROFIT TERTINGGI
-         double targetProfit = highestGlobalProfit - TrailingProfitStepPoints;
-         if(targetProfit < minProfit) targetProfit = minProfit;
-         
-         double avgPrice = GetAverageOpenPrice();
-         double totalVol = GetTotalVolume();
+   }
+   
+   // Update SL if profit increased
+   if(globalTrailingActive) {
+      double totalVol = GetTotalVolume();
+      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+      double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+      
+      if(tickValue > 0 && totalVol > 0) {
          double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-         double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-         double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+         double targetProfit = highestGlobalProfit - TrailingProfitStepPoints;
+         if(targetProfit < TrailingProfitMinProfitUSD) targetProfit = TrailingProfitMinProfitUSD;
          
-         if(tickValue > 0 && totalVol > 0) {
-            double profitPerPoint = totalVol * tickValue / tickSize;
-            if(profitPerPoint > 0) {
-               double profitInPoints = targetProfit / profitPerPoint;
-               
-               // AMBIL POSISI PERTAMA UNTUK DAPATKAN ARAH
-               ulong ticket = PositionGetTicket(0);
-               if(ticket > 0 && PositionSelectByTicket(ticket)) {
+         for(int i = 0; i < PositionsTotal(); i++) {
+            ulong ticket = PositionGetTicket(i);
+            if(ticket > 0 && PositionSelectByTicket(ticket)) {
+               if(PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER && 
+                  PositionGetString(POSITION_SYMBOL) == _Symbol) {
+                  
                   ENUM_POSITION_TYPE type = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-                  double newSL;
-                  double pointSize = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+                  double profitPerPoint = totalVol * tickValue / tickSize;
                   
-                  if(type == POSITION_TYPE_BUY) {
-                     newSL = t.bid - (profitInPoints * pointSize);
-                  } else {
-                     newSL = t.ask + (profitInPoints * pointSize);
-                  }
-                  
-                  // UPDATE SL JIKA LEBIH BAIK (MENDORONG PROFIT)
-                  if((type == POSITION_TYPE_BUY && newSL > lastTrailingSLPrice) ||
-                     (type == POSITION_TYPE_SELL && newSL < lastTrailingSLPrice)) {
-                     trailingSLPrice = newSL;
-                     lastTrailingSLPrice = newSL;
-                     Print("GGR-TP: Trailing SL updated to ", DoubleToString(trailingSLPrice, _Digits),
-                           " (Highest Profit: ", DoubleToString(highestGlobalProfit, 2), " USD)");
+                  if(profitPerPoint > 0) {
+                     double profitInPoints = targetProfit / profitPerPoint;
+                     double newSL;
+                     
+                     if(type == POSITION_TYPE_BUY) {
+                        newSL = t.bid - (profitInPoints * point);
+                     } else {
+                        newSL = t.ask + (profitInPoints * point);
+                     }
+                     
+                     // Update if better (for BUY: higher SL, for SELL: lower SL)
+                     if((type == POSITION_TYPE_BUY && newSL > globalTrailingSL) ||
+                        (type == POSITION_TYPE_SELL && newSL < globalTrailingSL)) {
+                        globalTrailingSL = newSL;
+                        Print("GGR-GTP: SL Updated to ", DoubleToString(globalTrailingSL, _Digits));
+                     }
+                     break;
                   }
                }
             }
          }
       }
       
-      //--- APLIKASIKAN SL KE SEMUA POSISI
-      ApplyTrailingProfitSL(t);
+      // Apply SL to all positions
+      ApplyGlobalTrailingSL(t);
    }
 }
 
 //+------------------------------------------------------------------+
-//| ApplyTrailingProfitSL - Apply Stop Loss to All Positions        |
+//| ApplyGlobalTrailingSL - Apply SL to All Positions               |
 //+------------------------------------------------------------------+
-void ApplyTrailingProfitSL(MqlTick &t) {
-   if(!trailingActive || trailingSLPrice <= 0) return;
+void ApplyGlobalTrailingSL(MqlTick &t) {
+   if(!globalTrailingActive || globalTrailingSL <= 0) return;
    
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   int totalPos = CountPositions();
-   if(totalPos == 0) {
-      trailingActive = false;
-      return;
-   }
    
-   for(int i = 0; i < PositionsTotal(); i++) {
+   for(int i = PositionsTotal() - 1; i >= 0; i--) {
       ulong ticket = PositionGetTicket(i);
       if(ticket > 0 && PositionSelectByTicket(ticket)) {
          if(PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER && 
@@ -480,33 +462,20 @@ void ApplyTrailingProfitSL(MqlTick &t) {
             double currentSL = PositionGetDouble(POSITION_SL);
             double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
             
-            double newSL = 0;
+            double newSL = globalTrailingSL;
             bool shouldUpdate = false;
             
             if(type == POSITION_TYPE_BUY) {
-               newSL = trailingSLPrice;
-               if(currentSL == 0 || newSL > currentSL) {
-                  shouldUpdate = true;
-               }
-               // PASTIKAN SL TIDAK MELEWATI OPEN PRICE
-               if(newSL > openPrice) {
-                  newSL = openPrice - (10 * point);
-               }
+               // Ensure SL not above open price
+               if(newSL > openPrice) newSL = openPrice - (10 * point);
+               if(currentSL == 0 || newSL > currentSL) shouldUpdate = true;
             } else {
-               newSL = trailingSLPrice;
-               if(currentSL == 0 || newSL < currentSL) {
-                  shouldUpdate = true;
-               }
-               // PASTIKAN SL TIDAK MELEWATI OPEN PRICE
-               if(newSL < openPrice) {
-                  newSL = openPrice + (10 * point);
-               }
+               if(newSL < openPrice) newSL = openPrice + (10 * point);
+               if(currentSL == 0 || newSL < currentSL) shouldUpdate = true;
             }
             
             if(shouldUpdate && newSL > 0) {
-               if(trade.PositionModify(ticket, newSL, 0)) {
-                  Print("GGR-TP: SL updated for ticket ", ticket, " to ", DoubleToString(newSL, _Digits));
-               }
+               trade.PositionModify(ticket, newSL, 0);
             }
          }
       }
@@ -514,35 +483,29 @@ void ApplyTrailingProfitSL(MqlTick &t) {
 }
 
 //+------------------------------------------------------------------+
-//| GetAverageOpenPrice - Calculate Average Open Price of All Pos   |
+//| GetAverageOpenPrice - Average Price of All Positions            |
 //+------------------------------------------------------------------+
 double GetAverageOpenPrice() {
    double totalPrice = 0;
    double totalVol = 0;
-   int count = 0;
    
    for(int i = 0; i < PositionsTotal(); i++) {
       ulong ticket = PositionGetTicket(i);
       if(ticket > 0 && PositionSelectByTicket(ticket)) {
          if(PositionGetInteger(POSITION_MAGIC) == MAGIC_NUMBER && 
             PositionGetString(POSITION_SYMBOL) == _Symbol) {
-            double vol = PositionGetDouble(POSITION_VOLUME);
-            double price = PositionGetDouble(POSITION_PRICE_OPEN);
-            totalPrice += price * vol;
-            totalVol += vol;
-            count++;
+            totalPrice += PositionGetDouble(POSITION_PRICE_OPEN) * PositionGetDouble(POSITION_VOLUME);
+            totalVol += PositionGetDouble(POSITION_VOLUME);
          }
       }
    }
    
-   if(totalVol > 0) {
-      return NormalizeDouble(totalPrice / totalVol, _Digits);
-   }
+   if(totalVol > 0) return NormalizeDouble(totalPrice / totalVol, _Digits);
    return 0;
 }
 
 //+------------------------------------------------------------------+
-//| GetTotalVolume - Calculate Total Volume of All Positions        |
+//| GetTotalVolume - Total Volume of All Positions                  |
 //+------------------------------------------------------------------+
 double GetTotalVolume() {
    double totalVol = 0;
@@ -560,7 +523,7 @@ double GetTotalVolume() {
 }
 
 //+------------------------------------------------------------------+
-//| ManageLatestPositionTrailing - Independent Dual Trailing        |
+//| ManageLatestPositionTrailing - ORIGINAL (TIDAK BERUBAH)         |
 //+------------------------------------------------------------------+
 void ManageLatestPositionTrailing(MqlTick &t) {
    if(PositionsTotal() == 0) return;
@@ -635,7 +598,7 @@ void ManageLatestPositionTrailing(MqlTick &t) {
 }
 
 //+------------------------------------------------------------------+
-//| ExecuteCloseAllStrategy - Mass Close All Active Positions      |
+//| ExecuteCloseAllStrategy - ORIGINAL (TIDAK BERUBAH + RESET)      |
 //+------------------------------------------------------------------+
 void ExecuteCloseAllStrategy() {
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
@@ -649,20 +612,18 @@ void ExecuteCloseAllStrategy() {
    }
    if(AutoPurgeLog) CleanTrashLogs();
    
-   //--- RESET TRAILING PROFIT VARIABLES
+   //--- RESET GLOBAL TRAILING
    highestGlobalProfit = 0.0;
-   trailingSLPrice = 0.0;
-   trailingActive = false;
-   lastTrailingSLPrice = 0.0;
+   globalTrailingSL = 0.0;
+   globalTrailingActive = false;
    
-   //--- INJEKSI FITUR REFRESH SETELAH CLOSEALL TERPICU
    UpdateDashboardData();
    ChartNavigate(0, CHART_CURRENT_POS, 0);
    ChartRedraw(0);
 }
 
 //+------------------------------------------------------------------+
-//| ScanAndKillManualOrders - Detect and Close Manual Intervention  |
+//| ScanAndKillManualOrders - ORIGINAL (TIDAK BERUBAH)              |
 //+------------------------------------------------------------------+
 void ScanAndKillManualOrders() {
    for(int i = PositionsTotal() - 1; i >= 0; i--) {
@@ -677,7 +638,7 @@ void ScanAndKillManualOrders() {
 }
 
 //+------------------------------------------------------------------+
-//| CalibratedExecute - Digit-calibrated Order Execution            |
+//| CalibratedExecute - ORIGINAL (TIDAK BERUBAH)                    |
 //+------------------------------------------------------------------+
 bool CalibratedExecute(ENUM_ORDER_TYPE type, double lot, string comment) {
    MqlTick tick;
@@ -691,7 +652,7 @@ bool CalibratedExecute(ENUM_ORDER_TYPE type, double lot, string comment) {
 }
 
 //+------------------------------------------------------------------+
-//| GetEMAValue - Get EMA Indicator Value                           |
+//| GetEMAValue - ORIGINAL (TIDAK BERUBAH)                          |
 //+------------------------------------------------------------------+
 double GetEMAValue() {
    double buf[];
@@ -701,7 +662,7 @@ double GetEMAValue() {
 }
 
 //+------------------------------------------------------------------+
-//| CountPositions - Count Total Internal Positions                 |
+//| CountPositions - ORIGINAL (TIDAK BERUBAH)                       |
 //+------------------------------------------------------------------+
 int CountPositions() {
    int c = 0;
@@ -718,7 +679,7 @@ int CountPositions() {
 }
 
 //+------------------------------------------------------------------+
-//| CalculateTotalProfit - Net Profit + Swap + Commission           |
+//| CalculateTotalProfit - ORIGINAL (TIDAK BERUBAH)                 |
 //+------------------------------------------------------------------+
 double CalculateTotalProfit() {
    double total = 0;
@@ -735,7 +696,7 @@ double CalculateTotalProfit() {
 }
 
 //+------------------------------------------------------------------+
-//| IsPriceTooClose - Anti-Stack Layer Protection                   |
+//| IsPriceTooClose - ORIGINAL (TIDAK BERUBAH)                      |
 //+------------------------------------------------------------------+
 bool IsPriceTooClose(double price, int dist) {
    double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
@@ -754,7 +715,7 @@ bool IsPriceTooClose(double price, int dist) {
 }
 
 //+------------------------------------------------------------------+
-//| IsCandleConfirm - Previous Candle Color Validation              |
+//| IsCandleConfirm - ORIGINAL (TIDAK BERUBAH)                      |
 //+------------------------------------------------------------------+
 bool IsCandleConfirm(ENUM_ORDER_TYPE type) {
    double open[1], close[1];
@@ -766,7 +727,7 @@ bool IsCandleConfirm(ENUM_ORDER_TYPE type) {
 }
 
 //+------------------------------------------------------------------+
-//| IsMarginEnough - Check Margin Sufficiency Before Layering       |
+//| IsMarginEnough - ORIGINAL (TIDAK BERUBAH)                       |
 //+------------------------------------------------------------------+
 bool IsMarginEnough(double lot, ENUM_ORDER_TYPE orderType) {
    double margin;
@@ -779,22 +740,21 @@ bool IsMarginEnough(double lot, ENUM_ORDER_TYPE orderType) {
 }
 
 //+------------------------------------------------------------------+
-//| CleanTrashLogs - Simplified log management                      |
+//| CleanTrashLogs - ORIGINAL (TIDAK BERUBAH)                       |
 //+------------------------------------------------------------------+
 void CleanTrashLogs() {
-   // Simplified - MQL5 doesn't have direct file search functions
    Print("GGR: Log cleanup completed (simplified mode)");
 }
 
 //+------------------------------------------------------------------+
-//| OnTimer - Dashboard Auto-caller per second                      |
+//| OnTimer - ORIGINAL (TIDAK BERUBAH)                              |
 //+------------------------------------------------------------------+
 void OnTimer() {
    UpdateDashboardData();
 }
 
 //+------------------------------------------------------------------+
-//| UpdateDashboardData - Draw Dashboard Text Graphics              |
+//| UpdateDashboardData - ORIGINAL + TRAILING PROFIT STATUS         |
 //+------------------------------------------------------------------+
 void UpdateDashboardData() {
    double bal = AccountInfoDouble(ACCOUNT_BALANCE);
@@ -836,12 +796,12 @@ void UpdateDashboardData() {
    int days = (int)(remaining / 86400);
    string expLabel = TimeToString(INTERNAL_EXPIRY, TIME_DATE) + " (" + (string)days + " Days)";
 
-   //--- TRAILING PROFIT STATUS
+   //--- ADDED: GLOBAL TRAILING STATUS
    string tpStatus = "DISABLED";
    color tpColor = clrGray;
    if(EnableTrailingProfit) {
-      if(trailingActive) {
-         tpStatus = "ACTIVE (SL: " + DoubleToString(trailingSLPrice, _Digits) + ")";
+      if(globalTrailingActive) {
+         tpStatus = "ACTIVE (SL: " + DoubleToString(globalTrailingSL, _Digits) + ")";
          tpColor = clrLime;
       } else if(profit > 0) {
          tpStatus = "READY (Profit: " + DoubleToString(profit, 2) + " USD)";
@@ -855,7 +815,7 @@ void UpdateDashboardData() {
    int xL = 25, xV = 165, y = 35;
    color cTitle = clrGold, cLab = clrWhite, cVal = clrCyan, cS = clrSpringGreen, cA = clrDeepPink;
 
-   SetTxt("GGR_H1", ">> GOGOR V12.25", xL, y, cTitle, 14, "Impact");
+   SetTxt("GGR_H1", ">> GOGOR V12.25 GIRD", xL, y, cTitle, 14, "Impact");
    DrawLine("GGR_L1", xL, y += 25, 320, cTitle);
    
    SetTxt("GGR_MON_T", "[ SYSTEM MONITOR ]", xL, y += 12, cTitle, 9, "Arial Bold");
@@ -868,7 +828,7 @@ void UpdateDashboardData() {
    SetTxt("GGR_FILT_L", "Logic Status", xL, y += 18, cLab, 9); 
    SetTxt("GGR_FILT_V", " " + filterStatus, xV, y, (currentTradeMode == MODE_BOTH ? cVal : clrOrange), 9);
    
-   //--- TRAILING PROFIT STATUS DASHBOARD
+   //--- ADDED: GLOBAL TRAILING STATUS DISPLAY
    SetTxt("GGR_TP_L", "Trailing Profit", xL, y += 18, cLab, 9);
    SetTxt("GGR_TP_V", " " + tpStatus, xV, y, tpColor, 9, "Arial Bold");
 
@@ -916,7 +876,7 @@ void UpdateDashboardData() {
 }
 
 //+------------------------------------------------------------------+
-//| SetTxt - Dashboard Text Label Helper                            |
+//| SetTxt - ORIGINAL (TIDAK BERUBAH)                               |
 //+------------------------------------------------------------------+
 void SetTxt(string n, string t, int x, int y, color c, int s, string font = "Arial") {
    if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_LABEL, 0, 0, 0);
@@ -929,7 +889,7 @@ void SetTxt(string n, string t, int x, int y, color c, int s, string font = "Ari
 }
 
 //+------------------------------------------------------------------+
-//| SetBtn - Interactive Chart Button Helper                        |
+//| SetBtn - ORIGINAL (TIDAK BERUBAH)                               |
 //+------------------------------------------------------------------+
 void SetBtn(string n, string t, int x, int y, int w, int h, color bg, color tc) {
    if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_BUTTON, 0, 0, 0);
@@ -945,7 +905,7 @@ void SetBtn(string n, string t, int x, int y, int w, int h, color bg, color tc) 
 }
 
 //+------------------------------------------------------------------+
-//| DrawLine - Visual Panel Border Line Helper                      |
+//| DrawLine - ORIGINAL (TIDAK BERUBAH)                             |
 //+------------------------------------------------------------------+
 void DrawLine(string n, int x, int y, int w, color c) {
    if(ObjectFind(0, n) < 0) ObjectCreate(0, n, OBJ_RECTANGLE_LABEL, 0, 0, 0);
@@ -958,7 +918,7 @@ void DrawLine(string n, int x, int y, int w, color c) {
 }
 
 //+------------------------------------------------------------------+
-//| OnChartEvent - Handle Manual Button Clicks on Chart             |
+//| OnChartEvent - ORIGINAL (TIDAK BERUBAH)                         |
 //+------------------------------------------------------------------+
 void OnChartEvent(const int id, const long &lparam, const double &dparam, const string &sparam) {
    if(id == CHARTEVENT_OBJECT_CLICK) {
@@ -989,7 +949,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
 }
 
 //+------------------------------------------------------------------+
-//| CountTypePositions - Count number of layers & last lot          |
+//| CountTypePositions - ORIGINAL (TIDAK BERUBAH)                   |
 //+------------------------------------------------------------------+
 void CountTypePositions(int &bC, int &sC, double &bL, double &sL) {
    bC = 0; sC = 0; bL = 0; sL = 0;
@@ -1022,7 +982,7 @@ void CountTypePositions(int &bC, int &sC, double &bL, double &sL) {
 }
 
 //+------------------------------------------------------------------+
-//| CheckLayeringByType - Distance Check & New Layer Execution      |
+//| CheckLayeringByType - ORIGINAL (TIDAK BERUBAH)                  |
 //+------------------------------------------------------------------+
 void CheckLayeringByType(ENUM_POSITION_TYPE type, int count, MqlTick &t, int oppositeCount) {
    double lastPrice = 0, lastLot = 0;
@@ -1059,7 +1019,7 @@ void CheckLayeringByType(ENUM_POSITION_TYPE type, int count, MqlTick &t, int opp
 }
 
 //+------------------------------------------------------------------+
-//| GetLastPriceAndLotByType - Get latest position data by type     |
+//| GetLastPriceAndLotByType - ORIGINAL (TIDAK BERUBAH)             |
 //+------------------------------------------------------------------+
 bool GetLastPriceAndLotByType(ENUM_POSITION_TYPE type, double &price, double &lot) {
    price = 0;
@@ -1088,7 +1048,7 @@ bool GetLastPriceAndLotByType(ENUM_POSITION_TYPE type, double &price, double &lo
 }
 
 //+------------------------------------------------------------------+
-//| CalculateHybridLot - Three-phase Integrated Lot Calculator      |
+//| CalculateHybridLot - ORIGINAL (TIDAK BERUBAH)                   |
 //+------------------------------------------------------------------+
 double CalculateHybridLot(int count, double lastLot) {
    double calculatedLot = InitialLot;
